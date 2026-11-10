@@ -292,11 +292,17 @@ func (d *WardenDetector) Install(config *Config) error {
 				"bin/magento", "setup:upgrade"); err != nil {
 				return err
 			}
-			// Look up the Hyvä theme ID and set it as default
+			// Look up the Hyvä theme ID and set it as default. A missing
+			// theme fails the install: setting an empty ID would silently
+			// leave the store on Luma.
 			logf(config, "▸ Setting Hyvä as default storefront theme")
+			themeID, err := wardenQueryThemeID(config.Directory, hyvaThemePath)
+			if err != nil {
+				return fmt.Errorf("could not find Hyvä theme ID: %w", err)
+			}
+			logf(config, "▸ Hyvä theme ID: %s", themeID)
 			if err := run("warden", "env", "exec", "php-fpm",
-				"bash", "-c",
-				`THEME_ID=$(mysql -h db -u magento -pmagento magento -N -e "SELECT theme_id FROM theme WHERE theme_path='Hyva/default'" 2>/dev/null) && bin/magento config:set design/theme/theme_id "$THEME_ID"`); err != nil {
+				"bin/magento", "config:set", themeIDConfigPath, themeID); err != nil {
 				return err
 			}
 			return run("warden", "env", "exec", "php-fpm",
@@ -373,6 +379,20 @@ func parseWardenVersion(output string) string {
 		}
 	}
 	return "unknown"
+}
+
+// wardenQueryThemeID queries the database through the php-fpm container for
+// the given theme path and returns its numeric ID as a string.
+func wardenQueryThemeID(dir, themePath string) (string, error) {
+	cmd := exec.Command("warden", "env", "exec", "php-fpm",
+		"mysql", "-h", "db", "-u", "magento", "-pmagento", "magento",
+		"-N", "-e", themeIDQuery(themePath))
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("warden mysql query failed: %w", err)
+	}
+	return parseThemeID(string(out), themePath)
 }
 
 // wardenPhpFpmContainer returns the Docker container ID for the php-fpm service.
