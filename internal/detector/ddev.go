@@ -300,12 +300,12 @@ func (d *DdevDetector) Install(config *Config) error {
 			}
 			// Look up the Hyvä theme ID and set it as default
 			logf(config, "▸ Setting Hyvä as default storefront theme")
-			themeID, err := ddevQueryThemeID(config.Directory, "Hyva/default")
+			themeID, err := ddevQueryThemeID(config.Directory, hyvaThemePath)
 			if err != nil {
 				return fmt.Errorf("could not find Hyvä theme ID: %w", err)
 			}
 			logf(config, "▸ Hyvä theme ID: %s", themeID)
-			if err := runDdevExec(config, "bin/magento", "config:set", "design/theme/theme_id", themeID); err != nil {
+			if err := runDdevExec(config, "bin/magento", "config:set", themeIDConfigPath, themeID); err != nil {
 				return fmt.Errorf("set Hyvä theme failed: %w", err)
 			}
 			if err := runDdevExec(config, "bin/magento", "cache:flush"); err != nil {
@@ -595,18 +595,13 @@ func ddevPrimaryURL(dir string) (string, error) {
 // ddevQueryThemeID queries the database via ddev mysql for the given theme path
 // and returns its numeric ID as a string.
 func ddevQueryThemeID(dir, themePath string) (string, error) {
-	cmd := exec.Command("ddev", "mysql", "-N", "-e",
-		fmt.Sprintf("SELECT theme_id FROM theme WHERE theme_path='%s'", themePath))
+	cmd := exec.Command("ddev", "mysql", "-N", "-e", themeIDQuery(themePath))
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("ddev mysql query failed: %w", err)
 	}
-	id := strings.TrimSpace(string(out))
-	if id == "" {
-		return "", fmt.Errorf("theme %q not found in database", themePath)
-	}
-	return id, nil
+	return parseThemeID(string(out), themePath)
 }
 
 func (d *DdevDetector) Detect() (*Environment, error) {
