@@ -381,15 +381,20 @@ func parseWardenVersion(output string) string {
 	return "unknown"
 }
 
-// wardenQueryThemeID queries the database through the php-fpm container for
-// the given theme path and returns its numeric ID as a string.
+// wardenQueryThemeID queries the database through the db container for the
+// given theme path and returns its numeric ID as a string. The query runs in
+// the db service because warden env exec does not pass a mysql -h flag
+// through to the php-fpm container unscathed.
 func wardenQueryThemeID(dir, themePath string) (string, error) {
-	cmd := exec.Command("warden", "env", "exec", "php-fpm",
-		"mysql", "-h", "db", "-u", "magento", "-pmagento", "magento",
+	cmd := exec.Command("warden", "env", "exec", "-T", "db",
+		"mysql", "-u", "magento", "-pmagento", "magento",
 		"-N", "-e", themeIDQuery(themePath))
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
+			err = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+		}
 		return "", fmt.Errorf("warden mysql query failed: %w", err)
 	}
 	return parseThemeID(string(out), themePath)
